@@ -12,6 +12,16 @@ GHDL_TOP   := tb_spi
 GHDL_FLAGS :=
 GHDL_SIM_FLAGS :=
 
+# QuestaSim / ModelSim settings. Select with: make TOOLCHAIN=modelsim
+VLIB      := vlib
+VMAP      := vmap
+VCOM      := vcom
+VLOG      := vlog
+VSIM      := vsim
+VSIM_WORK := work
+VSIM_TOP  := tb_spi
+VSIM_FLAGS :=
+
 VHDL_SRCS_DIR := \
     rtl \
     tb
