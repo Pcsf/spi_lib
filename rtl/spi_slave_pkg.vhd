@@ -17,7 +17,7 @@ package spi_slave_pkg is
   ---------------------------------------------------------------------------
   type spi_slave_in_type is record
     mode        : std_logic_vector(1 downto 0);  -- {CPOL, CPHA}
-    data_width  : unsigned(4 downto 0);          -- 1 .. 32 bits
+    data_width  : unsigned(5 downto 0);          -- 1 .. 32 bits
     tx_data     : std_logic_vector(31 downto 0); -- data to transmit
     cs_n        : std_logic;                     -- chip-select (active-low)
     sclk        : std_logic;                     -- serial clock from master
@@ -32,7 +32,7 @@ package spi_slave_pkg is
     busy        : std_logic;                     -- transfer in progress
     rx_valid    : std_logic;                     -- rx_data valid pulse
     rx_data     : std_logic_vector(31 downto 0); -- received data
-    rx_count    : unsigned(4 downto 0);          -- bits remaining
+    rx_count    : unsigned(5 downto 0);          -- bits remaining
   end record;
 
   ---------------------------------------------------------------------------
