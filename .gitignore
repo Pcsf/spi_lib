@@ -1,0 +1,49 @@
+# Build output
+build/
+
+# Generated Makefile.mk fragments (recreated by 'make scan')
+# Note: Makefile.mk files in make/ and templates/ are NOT ignored.
+**/Makefile.mk
+!make/
+!templates/
+
+# .compile_order files are intentionally NOT ignored — they encode the VHDL
+# compilation order decided by the developer and must be version-controlled.
+# (They are created by 'make scan' and edited by the user; never overwritten.)
+
+# Vivado junk
+*.jou
+*.log
+*.str
+vivado_pid*.str
+.Xil/
+NA/
+
+# Quartus generated files
+db/
+incremental_db/
+output_files/
+*.qws
+*.rpt
+*.smsg
+*.sld
+*.pin
+*.pof
+*.rbf
+
+# ModelSim / QuestaSim
+transcript
+vsim.wlf
+*.vcd
+modelsim.ini
+
+# GHDL
+*.cf
+*.o
+*.ghw
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~

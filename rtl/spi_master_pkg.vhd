@@ -20,7 +20,7 @@ package spi_master_pkg is
     start       : std_logic;                       -- launch transfer
     mode        : std_logic_vector(1 downto 0);    -- {CPOL, CPHA} 0-3
     sclk_div    : unsigned(7 downto 0);            -- half-period divider
-    data_width  : unsigned(4 downto 0);            -- 1 .. 32 bits
+    data_width  : unsigned(5 downto 0);            -- 1 .. 32 bits
     tx_data     : std_logic_vector(31 downto 0);   -- data to transmit
   end record;
 
@@ -34,7 +34,7 @@ package spi_master_pkg is
     busy        : std_logic;                       -- transfer in progress
     rx_valid    : std_logic;                       -- rx_data valid pulse
     rx_data     : std_logic_vector(31 downto 0);   -- received data
-    tx_count    : unsigned(4 downto 0);            -- bits remaining
+    tx_count    : unsigned(5 downto 0);            -- bits remaining
   end record;
 
   ---------------------------------------------------------------------------
