@@ -4,7 +4,7 @@
 
 PROJECT_NAME := spi_lib
 BUILD_DIR    := build
-TOOLCHAIN    := ghdl
+TOOLCHAIN    := modelsim
 SRC_ROOT     := .
 
 GHDL_STD   := 08
