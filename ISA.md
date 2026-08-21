@@ -56,9 +56,7 @@ A single regression command gives fast, diagnostic confidence at three seams: th
 
 ## Goal
 
-"OK. I like the proposal. Go ahead with the implementation"
-
-Implement the approved UVVM-backed verification architecture and the generic named-library support it requires, preserving the existing RTL and closing every functional claim with self-checking simulation evidence.
+Implement the UVVM-backed verification architecture and the generic named-library support it requires, preserving the existing RTL and closing every functional claim with self-checking simulation evidence.
 
 ## Test Strategy
 
