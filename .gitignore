@@ -42,6 +42,10 @@ modelsim.ini
 *.o
 *.ghw
 
+# UVVM runtime logs
+UVVM_Alert.txt
+UVVM_Log.txt
+
 # IDE
 .vscode/
 .idea/

@@ -1,1 +1,3 @@
+spi_bus_monitor_pkg.vhd
+spi_bus_monitor.vhd
 tb_spi.vhd
