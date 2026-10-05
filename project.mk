@@ -22,6 +22,9 @@ VSIM      := vsim
 VSIM_WORK := work
 VSIM_TOP  := tb_spi
 VSIM_FLAGS := -t fs
+# The regression prints this only after every check has run, so a run that
+# stops early fails `make test` instead of passing it.
+TEST_PASS_PATTERN := SPI REGRESSION PASSED
 
 UVVM_ROOT := uvvm
 VHDL_LIBS := uvvm_util bitvis_vip_spi
