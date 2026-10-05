@@ -39,6 +39,7 @@ The default simulator is ModelSim/Questa:
 
 ```bash
 make sim
+make test   # same regression; exit status is the verdict, failing on any check or an early stop
 ```
 
 To use GHDL, set `TOOLCHAIN := ghdl` in `project.mk`, then run:
