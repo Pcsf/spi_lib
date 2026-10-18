@@ -1,9 +1,8 @@
 -------------------------------------------------------------------------------
--- Entity   : spi_master
--- Description: Full-duplex SPI master supporting all 4 modes (0-3),
---              configurable SCLK divider (sysclk / (2*(N+1))), and
---              data widths 1-32 bits.  Auto-manages CS, SCLK, and MOSI.
--- Method   : Gaisler two-process structured VHDL (synchronous reset)
+-- Entity     : spi_master
+-- Description: Full-duplex SPI master, modes 0-3, MSB first, 1-32 bit frames.
+--              Drives cs_n for the whole frame.
+-- Method     : Gaisler two-process, synchronous reset
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -12,16 +11,14 @@ use work.spi_master_pkg.all;
 
 entity spi_master is
   port (
-    clk  : in  std_logic;
-    rst  : in  std_logic;
-    miso : in  std_logic;
-    mi   : in  spi_master_in_type;
-    mo   : out spi_master_out_type);
+    clk : in  std_logic;
+    rst : in  std_logic;
+    mi  : in  spi_master_in_type;
+    mo  : out spi_master_out_type);
 end entity spi_master;
 
 architecture rtl of spi_master is
 
-  -- State enumeration
   type state_type is (
     SPI_IDLE,
     SPI_START,
@@ -29,37 +26,30 @@ architecture rtl of spi_master is
     SPI_FINISH
   );
 
-  -- Register state record — ALL flip-flop state lives here
   type reg_type is record
     state           : state_type;
 
-    -- SCLK generation
     sclk_half_cnt   : unsigned(8 downto 0);
     sclk_half_period: unsigned(8 downto 0);
     sclk_level      : std_logic;
 
-    -- Data registers
     tx_shreg        : std_logic_vector(31 downto 0);
     rx_shreg        : std_logic_vector(31 downto 0);
     bit_idx         : unsigned(5 downto 0);
     tx_count        : unsigned(5 downto 0);
     data_width      : unsigned(5 downto 0);
 
-    -- Outputs (driven by registered value)
     mosi_out        : std_logic;
     cs_out          : std_logic;
 
-    -- Status
     busy            : std_logic;
     rx_valid        : std_logic;
     rx_data_out     : std_logic_vector(31 downto 0);
 
-    -- Mode
     cpol            : std_logic;
     cpha            : std_logic;
   end record;
 
-  -- Reset values
   constant REG_RESET : reg_type := (
     state           => SPI_IDLE,
     sclk_half_cnt   => (others => '0'),
@@ -83,24 +73,16 @@ architecture rtl of spi_master is
 
 begin
 
-  -- =====================================================================
-  -- Combinational process: all logic, algorithm, and state transitions
-  -- =====================================================================
   comb : process(all)
     variable v       : reg_type;
     variable width_i : integer;
   begin
-    -- 1. Default: copy current state (prevents inferred latches)
     v := r;
 
-    -- rx_valid is a one-cycle completion pulse.
     v.rx_valid := '0';
 
     case r.state is
 
-      -- ---------------------------------------------------------------
-      -- IDLE: waiting for transfer request
-      -- ---------------------------------------------------------------
       when SPI_IDLE =>
         v.mosi_out  := '0';
         v.cs_out    := '1';
@@ -118,13 +100,9 @@ begin
           v.state            := SPI_START;
         end if;
 
-      -- ---------------------------------------------------------------
-      -- START: load data, assert CS, configure SCLK
-      -- ---------------------------------------------------------------
       when SPI_START =>
         v.busy := '1';
 
-        -- Start with the configuration captured along with the start request.
         v.sclk_half_cnt := (others => '0');
         v.sclk_level    := r.cpol;
         v.rx_shreg      := (others => '0');
@@ -132,47 +110,36 @@ begin
         width_i         := to_integer(r.data_width);
         v.bit_idx       := to_unsigned(width_i - 1, 6);
 
-        -- Assert chip select and present the first transmit bit.
+        -- The first bit is on MOSI before the first SCLK edge in every mode.
         v.cs_out   := '0';
         v.mosi_out := r.tx_shreg(width_i - 1);
 
         v.state := SPI_TRANSFER;
 
-      -- ---------------------------------------------------------------
-      -- TRANSFER: shift bits, toggle SCLK
-      -- ---------------------------------------------------------------
       when SPI_TRANSFER =>
         v.cs_out := '0';
         v.busy   := '1';
         width_i  := to_integer(r.bit_idx);
 
-        -- Default MOSI to current bit; updated on SCLK edges below
         v.mosi_out := r.tx_shreg(width_i);
 
         if r.sclk_half_cnt = r.sclk_half_period - to_unsigned(1, 9) then
-          -- SCLK half-period elapsed → clock edge
           v.sclk_half_cnt := (others => '0');
 
           if r.sclk_level = r.cpol then
-            -- Rising from idle to active level
+            -- Leading edge: SCLK leaves its idle level.
             v.sclk_level := not r.cpol;
 
             if r.cpha = '0' then
-              -- CPHA = 0: sample MISO on active edge
-              v.rx_shreg(width_i) := miso;
-            else
-              -- CPHA = 1: ensure MOSI is correct on active edge
-              v.mosi_out := r.tx_shreg(width_i);
+              v.rx_shreg(width_i) := mi.miso;
             end if;
 
           else
-            -- Falling from active back to idle level
+            -- Trailing edge: SCLK returns to its idle level.
             v.sclk_level := r.cpol;
 
             if r.cpha = '0' then
-              -- CPHA = 0: shift next MOSI bit on idle edge
               if r.tx_count = to_unsigned(1, 6) then
-                -- Last bit — transfer complete
                 v.tx_count := (others => '0');
                 v.state    := SPI_FINISH;
               else
@@ -183,11 +150,10 @@ begin
               end if;
 
             else
-              -- CPHA = 1: sample MISO on idle edge
-              v.rx_shreg(width_i) := miso;
+              v.rx_shreg(width_i) := mi.miso;
 
+              -- MOSI follows bit_idx one clk after this edge.
               if r.tx_count = to_unsigned(1, 6) then
-                -- Last bit — transfer complete
                 v.tx_count := (others => '0');
                 v.state    := SPI_FINISH;
               else
@@ -199,38 +165,28 @@ begin
           end if;
 
         else
-          -- Still counting toward half-period
           v.sclk_half_cnt := r.sclk_half_cnt + to_unsigned(1, 9);
         end if;
 
-      -- ---------------------------------------------------------------
-      -- FINISH: deassert CS, drive received data, return to IDLE
-      -- ---------------------------------------------------------------
       when SPI_FINISH =>
-        v.cs_out      := '1';             -- deassert CS
-        v.rx_valid    := '1';             -- pulse: one cycle
+        v.cs_out      := '1';
+        v.rx_valid    := '1';
         v.rx_data_out := r.rx_shreg;
         v.busy        := '0';
-        v.sclk_level  := r.cpol;          -- SCLK back to idle
-        v.state       := SPI_IDLE;        -- advance next cycle
+        v.sclk_level  := r.cpol;
+        v.state       := SPI_IDLE;
 
-      -- ---------------------------------------------------------------
-      -- Others (safety catch)
-      -- ---------------------------------------------------------------
       when others =>
         v.state := SPI_IDLE;
 
     end case;
 
-    -- Synchronous reset — last algorithm assignment, highest priority.
     if rst = '1' then
       v := REG_RESET;
     end if;
 
-    -- 4. Drive register inputs
     rin <= v;
 
-    -- 5. Drive outputs from REGISTERED values
     mo.sclk     <= r.sclk_level;
     mo.mosi     <= r.mosi_out;
     mo.cs_n     <= r.cs_out;
@@ -241,9 +197,6 @@ begin
 
   end process comb;
 
-  -- =====================================================================
-  -- Sequential process: single registered update
-  -- =====================================================================
   regs : process(clk)
   begin
     if rising_edge(clk) then

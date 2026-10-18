@@ -63,10 +63,10 @@ architecture sim of tb_spi is
     mode       => "00",
     sclk_div   => (others => '0'),
     data_width => to_unsigned(8, 6),
-    tx_data    => (others => '0')
+    tx_data    => (others => '0'),
+    miso       => '0'
   );
-  signal mo          : spi_master_out_type;
-  signal master_miso : std_logic;
+  signal mo : spi_master_out_type;
 
   signal si : spi_slave_in_type := (
     mode       => "00",
@@ -134,7 +134,6 @@ begin
     port map (
       clk  => clk,
       rst  => rst,
-      miso => master_miso,
       mi   => mi,
       mo   => mo
     );
@@ -151,10 +150,10 @@ begin
   uvvm_master_bus_ss_n <= mo.cs_n;
   uvvm_master_bus_mosi <= mo.mosi;
 
-  master_miso <= so.miso when phase = PHASE_LOOPBACK else
-                 one_bit_slave_miso when phase = PHASE_MASTER_INDEPENDENT and use_one_bit_slave = '1' else
-                 uvvm_slave_miso when phase = PHASE_MASTER_INDEPENDENT else
-                 '0';
+  mi.miso <= so.miso when phase = PHASE_LOOPBACK else
+             one_bit_slave_miso when phase = PHASE_MASTER_INDEPENDENT and use_one_bit_slave = '1' else
+             uvvm_slave_miso when phase = PHASE_MASTER_INDEPENDENT else
+             '0';
 
   si.cs_n <= mo.cs_n when phase = PHASE_LOOPBACK else
              bfm_ss_n when phase = PHASE_SLAVE_INDEPENDENT else

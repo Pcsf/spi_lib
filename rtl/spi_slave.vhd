@@ -1,9 +1,8 @@
 -------------------------------------------------------------------------------
--- Entity   : spi_slave
--- Description: Full-duplex SPI slave responding to master-driven SCLK and
---              chip-select.  Supports all 4 SPI modes and data widths 1-32
---              bits.
--- Method   : Gaisler two-process structured VHDL (synchronous reset)
+-- Entity     : spi_slave
+-- Description: Full-duplex SPI slave, modes 0-3, MSB first, 1-32 bit frames.
+--              Detects SCLK edges by oversampling with clk.
+-- Method     : Gaisler two-process, synchronous reset
 -------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -20,40 +19,34 @@ end entity spi_slave;
 
 architecture rtl of spi_slave is
 
-  -- State enumeration
   type state_type is (
     SLAVE_IDLE,
     SLAVE_ACTIVE,
     SLAVE_DONE
   );
 
-  -- Register state record — ALL flip-flop state lives here
   type reg_type is record
     state          : state_type;
 
-    -- Data registers
     tx_shreg       : std_logic_vector(31 downto 0);
     rx_shreg       : std_logic_vector(31 downto 0);
     bit_idx        : unsigned(5 downto 0);
     tx_count       : unsigned(5 downto 0);
     data_width     : unsigned(5 downto 0);
 
-    -- Outputs
     miso_out       : std_logic;
     busy           : std_logic;
     rx_valid       : std_logic;
     rx_data_out    : std_logic_vector(31 downto 0);
     rx_count_out   : unsigned(5 downto 0);
 
-    -- Mode
     cpol           : std_logic;
     cpha           : std_logic;
 
-    -- SCLK delay for edge detection
+    -- sclk one clk ago, for edge detection
     sclk_d1        : std_logic;
   end record;
 
-  -- Reset values
   constant REG_RESET : reg_type := (
     state          => SLAVE_IDLE,
     tx_shreg       => (others => '0'),
@@ -75,9 +68,6 @@ architecture rtl of spi_slave is
 
 begin
 
-  -- =====================================================================
-  -- Combinational process: all logic, algorithm, and state transitions
-  -- =====================================================================
   comb : process(all)
     variable v         : reg_type;
     variable idx_i     : integer;
@@ -85,10 +75,8 @@ begin
     variable leading_edge  : boolean;
     variable trailing_edge : boolean;
   begin
-    -- 1. Default: copy current state (prevents inferred latches)
     v := r;
 
-    -- rx_valid is a one-cycle completion pulse.
     v.rx_valid := '0';
 
     leading_edge  := (r.sclk_d1 = r.cpol) and (mi.sclk /= r.cpol);
@@ -96,9 +84,6 @@ begin
 
     case r.state is
 
-      -- ---------------------------------------------------------------
-      -- IDLE: waiting for CS low
-      -- ---------------------------------------------------------------
       when SLAVE_IDLE =>
         v.miso_out     := '0';
         v.busy         := '0';
@@ -122,9 +107,6 @@ begin
           v.state      := SLAVE_ACTIVE;
         end if;
 
-      -- ---------------------------------------------------------------
-      -- ACTIVE: responding to master SCLK edges
-      -- ---------------------------------------------------------------
       when SLAVE_ACTIVE =>
         v.busy   := '1';
         idx_i    := to_integer(r.bit_idx);
@@ -176,41 +158,31 @@ begin
           end if;
         end if;
 
-        -- Safety: master released CS prematurely.
+        -- cs_n released mid-frame: abort without rx_valid.
         if mi.cs_n = '1' then
           v.state := SLAVE_IDLE;
           v.busy  := '0';
         end if;
 
-      -- ---------------------------------------------------------------
-      -- DONE: transfer complete, wait for CS release
-      -- ---------------------------------------------------------------
       when SLAVE_DONE =>
         v.rx_count_out := (others => '0');
         v.busy         := '0';
 
         if mi.cs_n = '1' then
-          -- CS released — go back to IDLE.
           v.state := SLAVE_IDLE;
         end if;
 
-      -- ---------------------------------------------------------------
-      -- Others (safety catch)
-      -- ---------------------------------------------------------------
       when others =>
         v.state := SLAVE_IDLE;
 
     end case;
 
-    -- Synchronous reset — last algorithm assignment, highest priority.
     if rst = '1' then
       v := REG_RESET;
     end if;
 
-    -- 4. Drive register inputs
     rin <= v;
 
-    -- 5. Drive outputs from REGISTERED values
     mo.miso     <= r.miso_out;
     mo.busy     <= r.busy;
     mo.rx_valid <= r.rx_valid;
@@ -219,9 +191,6 @@ begin
 
   end process comb;
 
-  -- =====================================================================
-  -- Sequential process: single registered update
-  -- =====================================================================
   regs : process(clk)
   begin
     if rising_edge(clk) then
