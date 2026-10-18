@@ -49,4 +49,6 @@ make clean
 make sim
 ```
 
+Vivado XSim is not supported: `xelab` 2021.2 segfaults while elaborating UVVM 2026.03.20 (`uvvm_util.global_signals_and_shared_variables_pkg`), even in a testbench that uses nothing but `uvvm_util`. With `TOOLCHAIN := vivado` the UVVM libraries and the project sources compile; elaboration then crashes.
+
 The self-checking regression verifies each DUT independently against UVVM SPI BFMs, checks the bus with a passive protocol monitor, and retains the direct master/slave loopback test.

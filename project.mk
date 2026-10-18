@@ -22,6 +22,11 @@ VSIM      := vsim
 VSIM_WORK := work
 VSIM_TOP  := tb_spi
 VSIM_FLAGS := -t fs
+
+# Vivado XSim. xelab 2021.2 segfaults elaborating UVVM 2026.03.20
+# (uvvm_util.global_signals_and_shared_variables_pkg), so the regression
+# cannot run there; the libraries and sources do compile.
+VIVADO_SIM_TOP := tb_spi
 # The regression prints this only after every check has run, so a run that
 # stops early fails `make test` instead of passing it.
 TEST_PASS_PATTERN := SPI REGRESSION PASSED
