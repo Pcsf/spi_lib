@@ -3,9 +3,11 @@
 -- Description: Flip-flop chain synchroniser for one asynchronous input.
 --              q follows d after STAGES clk edges. STAGES = 0 connects d
 --              straight to q, for an input already synchronous to clk.
---              The chain has no reset and powers up at INIT: a synchronous
---              reset would put a LUT in front of every stage and take its
---              delay out of the settling time.
+--              The chain has no reset and powers up at INIT. With the
+--              synchroniser attributes on r, Vivado 2021.2 maps a synchronous
+--              reset in this two-process form to a LUT in front of every
+--              stage instead of the flop reset pin, which takes the LUT delay
+--              out of the settling time.
 -- Constraints: false path or max delay on the path into the first stage.
 -- Method     : Gaisler two-process, no reset
 -------------------------------------------------------------------------------
