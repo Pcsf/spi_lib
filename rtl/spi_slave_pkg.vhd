@@ -9,9 +9,14 @@ use ieee.numeric_std.all;
 
 package spi_slave_pkg is
 
-  -- mode, data_width and tx_data are captured on the clk edge that sees cs_n
-  -- low, and may change while busy = '1'. cs_n, sclk and mosi are sampled
-  -- directly by clk: synchronise them to clk before this entity.
+  -- mode, data_width and tx_data are captured when the slave sees cs_n low,
+  -- and may change while busy = '1'.
+  --
+  -- cs_n, sclk and mosi pass through SYNC_STAGES flops (default 2; 0 only when
+  -- the master runs on clk). MISO, and busy after cs_n falls, then change up
+  -- to (SYNC_STAGES + 1) clk periods after the edge that causes them. Half an
+  -- SCLK period, and the master's cs_n-to-first-SCLK delay, must exceed that
+  -- plus the MISO output and board delay and the master's MISO setup time.
   type spi_slave_in_type is record
     mode        : std_logic_vector(1 downto 0);  -- CPOL & CPHA
     data_width  : unsigned(5 downto 0);          -- 1 to 32, else the frame is ignored
@@ -30,6 +35,8 @@ package spi_slave_pkg is
   end record;
 
   component spi_slave
+    generic (
+      SYNC_STAGES : natural := 2);
     port (
       clk : in  std_logic;
       rst : in  std_logic;

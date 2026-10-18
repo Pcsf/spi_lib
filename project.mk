@@ -30,6 +30,15 @@ VIVADO_SIM_TOP := tb_spi
 # The regression prints this only after every check has run, so a run that
 # stops early fails `make test` instead of passing it.
 TEST_PASS_PATTERN := SPI REGRESSION PASSED
+TEST_TIME         := 2ms
+
+# The slave runs with its default synchroniser (external master) and with
+# none (master on the same clk).
+TESTS := tb_spi_sync2 tb_spi_sync0
+TEST_tb_spi_sync2_TOP      := tb_spi
+TEST_tb_spi_sync2_GENERICS := G_SLAVE_SYNC_STAGES=2
+TEST_tb_spi_sync0_TOP      := tb_spi
+TEST_tb_spi_sync0_GENERICS := G_SLAVE_SYNC_STAGES=0
 
 UVVM_ROOT := uvvm
 VHDL_LIBS := uvvm_util bitvis_vip_spi

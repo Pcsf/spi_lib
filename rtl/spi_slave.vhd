@@ -1,7 +1,8 @@
 -------------------------------------------------------------------------------
 -- Entity     : spi_slave
 -- Description: Full-duplex SPI slave, modes 0-3, MSB first, 1-32 bit frames.
---              Detects SCLK edges by oversampling with clk.
+--              cs_n, sclk and mosi pass through SYNC_STAGES flops, then
+--              SCLK edges are detected by oversampling with clk.
 -- Method     : Gaisler two-process, synchronous reset
 -------------------------------------------------------------------------------
 library ieee;
@@ -10,6 +11,8 @@ use ieee.numeric_std.all;
 use work.spi_slave_pkg.all;
 
 entity spi_slave is
+  generic (
+    SYNC_STAGES : natural := 2);
   port (
     clk : in  std_logic;
     rst : in  std_logic;
@@ -66,7 +69,21 @@ architecture rtl of spi_slave is
 
   signal r, rin : reg_type;
 
+  signal cs_n_s, sclk_s, mosi_s : std_logic;
+
 begin
+
+  u_sync_cs_n : entity work.sync_ff
+    generic map (STAGES => SYNC_STAGES, INIT => '1')
+    port map (clk => clk, d => mi.cs_n, q => cs_n_s);
+
+  u_sync_sclk : entity work.sync_ff
+    generic map (STAGES => SYNC_STAGES, INIT => '0')
+    port map (clk => clk, d => mi.sclk, q => sclk_s);
+
+  u_sync_mosi : entity work.sync_ff
+    generic map (STAGES => SYNC_STAGES, INIT => '0')
+    port map (clk => clk, d => mi.mosi, q => mosi_s);
 
   comb : process(all)
     variable v         : reg_type;
@@ -79,8 +96,8 @@ begin
 
     v.rx_valid := '0';
 
-    leading_edge  := (r.sclk_d1 = r.cpol) and (mi.sclk /= r.cpol);
-    trailing_edge := (r.sclk_d1 /= r.cpol) and (mi.sclk = r.cpol);
+    leading_edge  := (r.sclk_d1 = r.cpol) and (sclk_s /= r.cpol);
+    trailing_edge := (r.sclk_d1 /= r.cpol) and (sclk_s = r.cpol);
 
     case r.state is
 
@@ -88,9 +105,9 @@ begin
         v.miso_out     := '0';
         v.busy         := '0';
         v.rx_count_out := (others => '0');
-        v.sclk_d1      := mi.sclk;
+        v.sclk_d1      := sclk_s;
 
-        if mi.cs_n = '0'
+        if cs_n_s = '0'
            and mi.data_width >= to_unsigned(1, mi.data_width'length)
            and mi.data_width <= to_unsigned(32, mi.data_width'length) then
           v.busy       := '1';
@@ -110,12 +127,12 @@ begin
       when SLAVE_ACTIVE =>
         v.busy   := '1';
         idx_i    := to_integer(r.bit_idx);
-        v.sclk_d1 := mi.sclk;
+        v.sclk_d1 := sclk_s;
 
         if leading_edge then
           if r.cpha = '0' then
             -- CPHA = 0: sample MOSI on the leading edge.
-            v.rx_shreg(idx_i) := mi.mosi;
+            v.rx_shreg(idx_i) := mosi_s;
           else
             -- CPHA = 1: launch MISO on the leading edge.
             v.miso_out := r.tx_shreg(idx_i);
@@ -140,7 +157,7 @@ begin
             end if;
           else
             -- CPHA = 1: sample MOSI on the trailing edge.
-            v.rx_shreg(idx_i) := mi.mosi;
+            v.rx_shreg(idx_i) := mosi_s;
 
             if r.tx_count = to_unsigned(1, 6) then
               v.rx_data_out  := v.rx_shreg;
@@ -159,7 +176,7 @@ begin
         end if;
 
         -- cs_n released mid-frame: abort without rx_valid.
-        if mi.cs_n = '1' then
+        if cs_n_s = '1' then
           v.state := SLAVE_IDLE;
           v.busy  := '0';
         end if;
@@ -168,7 +185,7 @@ begin
         v.rx_count_out := (others => '0');
         v.busy         := '0';
 
-        if mi.cs_n = '1' then
+        if cs_n_s = '1' then
           v.state := SLAVE_IDLE;
         end if;
 

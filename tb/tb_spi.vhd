@@ -10,10 +10,15 @@ use work.spi_slave_pkg.all;
 use work.spi_bus_monitor_pkg.all;
 
 entity tb_spi is
+  generic (G_SLAVE_SYNC_STAGES : natural := 2);
 end entity tb_spi;
 
 architecture sim of tb_spi is
   constant CLK_PERIOD : time := 10 ns;
+  -- The slave-independent stimulus leaves at least 35 ns from cs_n falling to
+  -- the first SCLK edge, and between SCLK edges.
+  constant SLAVE_LATENCY  : time := (G_SLAVE_SYNC_STAGES + 1) * CLK_PERIOD;
+  constant SLAVE_MIN_LEAD : time := 35 ns;
 
   type phase_type is (
     PHASE_MONITOR_QUALIFICATION,
@@ -139,6 +144,7 @@ begin
     );
 
   u_slave : spi_slave
+    generic map (SYNC_STAGES => G_SLAVE_SYNC_STAGES)
     port map (
       clk => clk,
       rst => rst,
@@ -277,6 +283,7 @@ begin
     variable slave_bfm_token      : std_logic := '0';
     variable master_events_before : natural;
     variable slave_events_before  : natural;
+    variable latency_edges        : natural;
     variable completed            : boolean;
 
     procedure check(
@@ -376,7 +383,8 @@ begin
         bfm_mosi <= tx_data(width_value - 1);
       end if;
 
-      wait for 20 ns;
+      -- Change the configuration only after the slave has captured it.
+      wait for SLAVE_LATENCY + 10 ns;
       if mutate_config then
         si.mode       <= not mode_value;
         si.data_width <= (others => '0');
@@ -449,6 +457,10 @@ begin
     end procedure;
 
   begin
+    assert SLAVE_LATENCY < SLAVE_MIN_LEAD
+      report "G_SLAVE_SYNC_STAGES too large for the slave-independent stimulus timing"
+      severity failure;
+
     for cycle in 1 to 5 loop
       wait until rising_edge(clk);
     end loop;
@@ -746,7 +758,10 @@ begin
         end if;
 
         wait_for_monitor("slave independent transaction");
-        wait until rising_edge(clk);
+        -- rx_valid follows the last SCLK edge through the synchroniser.
+        for cycle in 1 to 1 + G_SLAVE_SYNC_STAGES loop
+          wait until rising_edge(clk);
+        end loop;
 
         check(slave_rx_events = slave_events_before + 1,
               "Slave rx_valid count mismatch: mode=" & integer'image(mode_number) &
@@ -811,7 +826,9 @@ begin
     arm_monitor(mode_value, 8, master_tx, slave_tx, true, 40 ns);
     drive_manual_frame(mode_value, 8, master_tx, true, bfm_rx);
     wait_for_monitor("slave configuration capture");
-    wait until rising_edge(clk);
+    for cycle in 1 to 1 + G_SLAVE_SYNC_STAGES loop
+      wait until rising_edge(clk);
+    end loop;
     check(slave_rx_events = slave_events_before + 1,
           "Slave configuration-capture rx_valid mismatch");
     check(masked(slave_rx_capture, 8) = masked(master_tx, 8),
@@ -828,24 +845,27 @@ begin
     bfm_sclk <= '0';
     bfm_mosi <= '1';
     bfm_ss_n <= '0';
-    wait until rising_edge(clk);
-    wait until rising_edge(clk);
+    for cycle in 1 to 2 + G_SLAVE_SYNC_STAGES loop
+      wait until rising_edge(clk);
+    end loop;
     slave_events_before := slave_rx_events;
     bfm_sclk <= '1';
     wait for 40 ns;
     bfm_sclk <= '0';
     wait for 20 ns;
     bfm_ss_n <= '1';
-    wait until rising_edge(clk);
-    wait until rising_edge(clk);
+    for cycle in 1 to 2 + G_SLAVE_SYNC_STAGES loop
+      wait until rising_edge(clk);
+    end loop;
     check(so.busy = '0' and slave_rx_events = slave_events_before,
           "Slave completed after premature CS release");
     slave_control_tests := slave_control_tests + 1;
 
     bfm_sclk <= '0';
     bfm_ss_n <= '0';
-    wait until rising_edge(clk);
-    wait until rising_edge(clk);
+    for cycle in 1 to 2 + G_SLAVE_SYNC_STAGES loop
+      wait until rising_edge(clk);
+    end loop;
     check(so.busy = '1', "Slave did not start reset-abort test");
     slave_events_before := slave_rx_events;
     rst <= '1';
@@ -860,7 +880,35 @@ begin
     wait until rising_edge(clk);
     slave_control_tests := slave_control_tests + 1;
 
-    report "Slave controls: " & integer'image(slave_control_tests) & "/5 PASS"
+    -- cs_n falls between clk edges; busy must follow on the clk edge after the
+    -- synchroniser, which proves the synchroniser is in the path.
+    si.mode       <= "00";
+    si.data_width <= to_unsigned(8, si.data_width'length);
+    bfm_sclk <= '0';
+    bfm_ss_n <= '1';
+    for cycle in 1 to 2 + G_SLAVE_SYNC_STAGES loop
+      wait until rising_edge(clk);
+    end loop;
+    wait for CLK_PERIOD / 2;
+    bfm_ss_n <= '0';
+    latency_edges := 0;
+    loop
+      wait until rising_edge(clk);
+      wait for 1 ns;
+      latency_edges := latency_edges + 1;
+      exit when so.busy = '1' or latency_edges = 10;
+    end loop;
+    check(latency_edges = G_SLAVE_SYNC_STAGES + 1,
+          "Slave cs_n-to-busy latency: expected " &
+          integer'image(G_SLAVE_SYNC_STAGES + 1) & " clk edges, got " &
+          integer'image(latency_edges));
+    bfm_ss_n <= '1';
+    for cycle in 1 to 2 + G_SLAVE_SYNC_STAGES loop
+      wait until rising_edge(clk);
+    end loop;
+    slave_control_tests := slave_control_tests + 1;
+
+    report "Slave controls: " & integer'image(slave_control_tests) & "/6 PASS"
       severity note;
 
     -------------------------------------------------------------------------
@@ -878,7 +926,9 @@ begin
         slave_tx    := x"5A3C618E" xor std_logic_vector(to_unsigned(width_value, 32));
 
         mi.mode       <= mode_value;
-        mi.sclk_div   <= to_unsigned(width_index + 1, mi.sclk_div'length);
+        -- Half an SCLK period must exceed the slave's synchroniser latency.
+        mi.sclk_div   <= to_unsigned(width_index + 1 + G_SLAVE_SYNC_STAGES,
+                                     mi.sclk_div'length);
         mi.data_width <= to_unsigned(width_value, mi.data_width'length);
         mi.tx_data    <= master_tx;
         si.mode       <= mode_value;
@@ -890,7 +940,7 @@ begin
         master_events_before := master_rx_events;
         slave_events_before  := slave_rx_events;
         arm_monitor(mode_value, width_value, master_tx, slave_tx, true,
-                    (width_index + 2) * CLK_PERIOD);
+                    (width_index + 2 + G_SLAVE_SYNC_STAGES) * CLK_PERIOD);
 
         mi.start <= '1';
         wait until rising_edge(clk);
