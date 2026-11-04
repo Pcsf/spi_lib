@@ -4,3 +4,5 @@
 [submodule "uvvm"]
 	path = uvvm
 	url = https://github.com/UVVM/UVVM.git
+[submodule "mk"]
+	url = ../makefile_project_template.git
